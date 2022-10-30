@@ -1,0 +1,8 @@
+﻿  main.cpp
+  Shader.cpp
+  Generating code
+  203 of 241 functions (84.2%) were compiled, the rest were copied from previous compilation.
+    198 functions were new in current compilation
+    2 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  OpenGLPractice.vcxproj -> A:\Documents\Personal\Code\VoxelEngine\OpenGLPractice\x64\Release\OpenGLPractice.exe

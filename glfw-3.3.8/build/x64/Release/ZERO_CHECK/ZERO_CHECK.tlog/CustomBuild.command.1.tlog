@@ -1,0 +1,10 @@
+^A:\DOCUMENTS\PERSONAL\CODE\VOXELENGINE\GLFW-3.3.8\BUILD\CMAKEFILES\46978EE193A4567D7D3ECB906098C27A\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SA:/Documents/Personal/Code/VoxelEngine/glfw-3.3.8 -BA:/Documents/Personal/Code/VoxelEngine/glfw-3.3.8/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file A:/Documents/Personal/Code/VoxelEngine/glfw-3.3.8/build/GLFW.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
