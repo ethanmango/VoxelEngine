@@ -119,3 +119,13 @@ glm::vec3 getCameraRight(){
 glm::vec3 getCameraUp(){
     return up;
 }
+
+void setCameraPos(glm::vec3 inputPos){
+    position = inputPos;
+}
+
+//Doesn't do anything, direction seems to be random based on how cursor is loaded into scene.
+//Might need to have a load time before allowing control to make sure cursor is centered before taking over.
+void setCameraDir(glm::vec3 inputDir){
+    directionZ = inputDir;
+}

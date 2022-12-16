@@ -7,5 +7,7 @@ glm::vec3 getCameraPos();
 glm::vec3 getCameraDir();
 glm::vec3 getCameraRight();
 glm::vec3 getCameraUp();
+void setCameraPos(glm::vec3 inputPos);
+void setCameraDir(glm::vec3 inputDir);
 
 #endif
