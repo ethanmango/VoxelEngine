@@ -260,35 +260,21 @@ struct clumpInfo {
 //for the angles that moved. Actual current angle and difference calculations done somewhere else.
 void recalculateClumpNormals(glm::vec3 angleDiffs, glm::mat3 *normalsMat){
 
-    float angleX = angleDiffs.x;
-    float angleY = angleDiffs.y;
-    float angleZ = angleDiffs.z;
+    //Convert to radians to calculate rotation stuff
+    float angleX = angleDiffs.x * (M_PI/180);
+    float angleY = angleDiffs.y * (M_PI/180);
+    float angleZ = angleDiffs.z * (M_PI/180);
     glm::mat3 rotationX, rotationY, rotationZ;
 
-    //Only bother calculating rotation if rotation isn't 0)
-    if (angleX != 0){
         rotationX = glm::mat3(1,0,0,0,cos(angleX), sin(angleX),0,-sin(angleX), cos(angleX));
-        //Rotation on X axis means rotating "up" and "forward" vectors
-        normalsMat[1] = rotationX * normalsMat[1];
-        normalsMat[2] = rotationX * normalsMat[2];
-    }
-
-    if (angleY != 0){
         rotationY = glm::mat3(cos(angleY),0,-sin(angleY),0,1, 0,sin(angleY),0, cos(angleY));
-        //Rotation on Y axis means rotating "right" and "forward" vectors
-        normalsMat[0] = rotationY * normalsMat[0];
-        normalsMat[2] = rotationY * normalsMat[2];
-    }
-
-    if (angleZ != 0){
         rotationZ = glm::mat3(cos(angleZ),sin(angleZ),0,-sin(angleZ),cos(angleZ), 0,0,0, 1);
-        //Rotation on Z axis means rotating "right" and "up" vectors
-        normalsMat[0] = rotationZ * normalsMat[0];
-        normalsMat[1] = rotationZ * normalsMat[1];
-    }
 
 
-
+    //ORDER of rotation matters, will change what shape looks like, so we will define it as X first, then Y, then Z;
+    //(as long as this is consistent it makes no difference to the user, they just change the angle according to what
+    //it currently looks like, its just that those same values would look different in a different order).
+    *normalsMat = rotationZ * rotationY * rotationX * *normalsMat;
 }
 
 
@@ -404,7 +390,7 @@ int main(){
     // In future set up clump struct that has methods such as rotateByDegrees and getClumpNormals
     // RotateByDegrees, for example, will take in the degree difference and call recalculateClumpNormals
     // while setRotation can set the rotation directly (and calculate angle differences).
-    recalculateClumpNormals(glm::vec3(45,0,0), &initialClumpNormals);
+    recalculateClumpNormals(glm::vec3(45,45,0), &initialClumpNormals);
 
 
     //On a loop clear the buffer, swap the buffers, then poll for events (call callback methods)
@@ -447,9 +433,10 @@ int main(){
         frameCamInfoArr[0] = frameCamInfo;
 
         clumpInfo frameClumpInfo;
+        //When migrating to rust, separate this out to  initialization and use getters to get the needed info
+        //when it updates
         frameClumpInfo.dimensions = vec4(1,1,1,0);
         vec4 translate = vec4(vec3(0,0,0),1);
-
         mat4 frameTransformMat = mat4(vec4(initialClumpNormals[0], 0), vec4(initialClumpNormals[1],0), vec4(initialClumpNormals[2],0), translate);
 
         frameClumpInfo.transformationMatrix = frameTransformMat;
