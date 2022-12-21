@@ -36,6 +36,66 @@ struct Ray {
 };
 
 
+bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, inout vec3 foundIntersectionPoint){
+    //Using similar strategy as in BB tracing we can multiply by reciprical rather than divide as to avoid -0 value.
+    //Need to make sure any time we are using this t value though, we are using it for comparisons.
+    vec3 clumpDims = inputClumpArr[0].dimensions.xyz;
+    vec3 clumpCenter = inputClumpArr[0].transformationMatrix[3].xyz;
+
+    int voxelExistence[8] = {0,1,1,0,0,1,1,0};
+
+    //First we need to check which voxel our clumpintersectionPoint exists at.
+    float minBoundX = clumpCenter.x - (clumpDims.x / 2.0f);
+    int xVoxelCoord = max(0,int(floor(clumpIntersectionPoint.x - minBoundX)));
+    if (xVoxelCoord > int(clumpDims.x) - 1) xVoxelCoord = int(clumpDims.x) - 1;
+
+    float minBoundY = clumpCenter.y - (clumpDims.y / 2.0f);
+    int yVoxelCoord = max(0,int(floor(clumpIntersectionPoint.y - minBoundY)));
+    if (yVoxelCoord > int(clumpDims.y) - 1) yVoxelCoord = int(clumpDims.y) - 1;
+
+
+    float minBoundZ = clumpCenter.z - (clumpDims.z / 2.0f);
+    int zVoxelCoord = max(0,int(floor(clumpIntersectionPoint.z - minBoundZ)));
+    if (zVoxelCoord > int(clumpDims.z) - 1) zVoxelCoord = int(clumpDims.z) - 1;
+
+    int existenceIndex = zVoxelCoord * int(clumpDims.y) * int(clumpDims.x) + yVoxelCoord * int(clumpDims.x) + xVoxelCoord;
+
+
+    foundIntersectionPoint = clumpIntersectionPoint;
+    return voxelExistence[existenceIndex] == 1;
+
+}
+
+vec3 rotatePointAroundPoint(vec3 pointToRotate, vec3 rotationCenter, mat3 rotationMatrix, bool inverseRotation){
+    vec3 translatedPoint = pointToRotate - rotationCenter;
+    vec3 rotatedIntersectionPoint;
+
+    if (inverseRotation){
+        rotatedIntersectionPoint = inverse(rotationMatrix) * translatedPoint;
+    }
+    else {
+        rotatedIntersectionPoint = rotationMatrix * translatedPoint;
+    }
+    return rotatedIntersectionPoint + rotationCenter;
+}
+
+vec3 rotateDirectionAroundPoint(vec3 directionToRotate, vec3 rotationCenter, mat3 rotationMatrix, bool inverseRotation){
+    vec3 translatedDir = directionToRotate - rotationCenter;
+    vec3 translatedOrigin = -rotationCenter;
+    vec3 rotatedOrigin = inverse(rotationMatrix) * translatedOrigin;
+    rotatedOrigin = rotatedOrigin + rotationCenter;
+
+    vec3 rotatedDir;
+    if (inverseRotation){
+        rotatedDir = inverse(rotationMatrix) * translatedDir;
+    }
+    else {
+        rotatedDir = rotationMatrix * translatedDir;
+    }
+    return rotatedDir + rotationCenter - rotatedOrigin;
+}
+
+
 void main()
 {
     //TODO: Look into being able to only ray tracing from fragcoords with voxel boxes, for now we ray trace every pixel
@@ -75,24 +135,12 @@ void main()
     //For the formula from the textbook txmin = (xmin - xe)/xd, we write xd as dot(raydir, right) and xe as dot(right, delta), delta being center of BB - ray origin
     //When right = aligned x axis, this is equal to saying get the x component of the origin point and direction vector, but we're now saying get x component on a rotated axis
     //Hard coding for now
-//    vec3 right = vec3(1,0,0);
-//    vec3 up = vec3(0,1,0);
-//    vec3 forward = vec3(0,0, 1);
 
     mat4 transformMat = inputClumpArr[0].transformationMatrix;
     vec3 right = transformMat[0].xyz;
     vec3 up = transformMat[1].xyz;
     vec3 forward = transformMat[2].xyz;
     vec3 translate = transformMat[3].xyz;
-
-//    if (translate == vec3(0,0,0)){
-//        FragColor = vec4(.21f, .1f, .23f, 1.0f);
-//        return;
-//    }
-//    else {
-//        FragColor = vec4(0,0,0, 1.0f);
-//        return;
-//    }
 
     vec3 dimensions = inputClumpArr[0].dimensions.xyz;
     float xMax = dimensions.x/2;
@@ -118,7 +166,6 @@ void main()
     float deltaZ = dot(forward, delta);
     float unalignedDirZ = dot(forward, camRay.direction);
 
-
     float a_x = 1.0f / unalignedDirX;
     float a_y = 1.0f / unalignedDirY;
     float a_z = 1.0f / unalignedDirZ;
@@ -134,7 +181,6 @@ void main()
     //Reasoning for these checks. If you enter any of the 3 bounds (x,y,z) and then leave any of them
     //if you are intersecting, you must have entered all 3 already, so once you leave, you can't enter any again
     //if you enter again after leaving any of the bounds, you must have been outside of the box to begin with
-
 
     vec3 normal;
     bool enteredXPos;
@@ -205,15 +251,7 @@ void main()
         // we can check the intersection point as being t_min
         //Now we must check if it hits any voxels in the BB.
 
-        mat4 rotationMat = mat4(transformMat[0], transformMat[1], transformMat[2], vec4(0,0,0,1));
-//        if (rotationMat[2] == vec3(0,0,1)){
-//                FragColor = vec4(.21f, .1f, .23f, 1.0f);
-//                return;
-//            }
-//            else {
-//                FragColor = vec4(0,0,0, 1.0f);
-//                return;
-//            }
+        mat3 rotationMat = mat3(transformMat[0].xyz, transformMat[1].xyz, transformMat[2].xyz);
         vec3 intersectionPoint = camRay.origin + (t_min * camRay.direction);
 
         //Note its much easier to simply rotate the intersection point, but rotating the viewing ray allow us to
@@ -232,100 +270,43 @@ void main()
         //so the original camera origin is no longer part of it, since our intersection and camera direction tell us
         //everything we need to know (we're still tehcnically using camera origin to determine this dir)
 
-//        vec3 translatedCamOrigin = camRay.origin - translate;
-        vec3 translatedDirection = camRay.direction - translate;
-        vec3 translatedOrigin = -translate;
-       vec3 translatedintersectionPoint = intersectionPoint - translate;
-//        vec3 rotatedCamOrigin = (inverse(rotationMat) * vec4(translatedCamOrigin,1)).xyz;
-//        rotatedCamOrigin = rotatedCamOrigin + translate;
+        vec3 worldAlignedIntersectionPoint = rotatePointAroundPoint(intersectionPoint, translate, rotationMat, true);
+        vec3 worldAlignedRayDirection = rotateDirectionAroundPoint(camRay.direction, translate, rotationMat, true);
 
-        vec3 rotatedOrigin = (inverse(rotationMat) * vec4(translatedOrigin,1)).xyz;
-        rotatedOrigin = rotatedOrigin + translate;
-
-        vec3 rotatedDirection = (inverse(rotationMat) * vec4(translatedDirection,1)).xyz;
-        rotatedDirection = rotatedDirection + translate - rotatedOrigin; //Need to rotate origin and subtract
-        //rotated direction vector so that new direction vector is also "from origin", just the rotated one
-
-
-//        vec3 transformedIntersectionPoint = rotatedCamOrigin + (t_min * normalize(rotatedDirection));
-
-        vec3 rotatedIntersectionPoint = (inverse(rotationMat) * vec4(translatedintersectionPoint,1)).xyz;
-        rotatedIntersectionPoint = rotatedIntersectionPoint + translate;
         vec3 normal;
 
 
-        if (abs(rotatedIntersectionPoint.x - (translate.x + xMin)) < epsilon){
+        if (abs(worldAlignedIntersectionPoint.x - (translate.x + xMin)) < epsilon){
             normal = -1 * right;
         }
-        else if (abs(rotatedIntersectionPoint.x - (translate.x + xMax)) < epsilon){
+        else if (abs(worldAlignedIntersectionPoint.x - (translate.x + xMax)) < epsilon){
             normal = right;
         }
-        else if (abs(rotatedIntersectionPoint.y - (translate.y + yMin)) < epsilon){
+        else if (abs(worldAlignedIntersectionPoint.y - (translate.y + yMin)) < epsilon){
             normal = -1 * up;
         }
-        else if (abs(rotatedIntersectionPoint.y - (translate.y + yMax)) < epsilon){
+        else if (abs(worldAlignedIntersectionPoint.y - (translate.y + yMax)) < epsilon){
             normal = up;
         }
-        else if (abs(rotatedIntersectionPoint.z - (translate.z + zMin)) < epsilon){
+        else if (abs(worldAlignedIntersectionPoint.z - (translate.z + zMin)) < epsilon){
             normal = -1 * forward;
         }
-        else if (abs(rotatedIntersectionPoint.z - (translate.z + zMax)) < epsilon){
+        else if (abs(worldAlignedIntersectionPoint.z - (translate.z + zMax)) < epsilon){
             normal = forward;
         }
         else {
             FragColor = vec4(.01f, .11f, .93f, 1.0f);
             return;
         }
-//        if (enteredXFirst && enteredXPos){
-//            normal = -1 * right;
-//        }
-//        else if (enteredXFirst && !enteredXPos){
-//            normal = right;
-//        }
-//        else if (enteredYFirst && enteredYPos){
-//            normal = -1 * up;
-//        }
-//        else if (enteredYFirst && !enteredYPos){
-//            normal = up;
-//        }
-//        else if (enteredZFirst && enteredZPos){
-//            normal = -1 * forward;
-//        }
-//        else if (enteredZFirst && !enteredZPos){
-//            normal = forward;
-//        }
-//        else {
-//            FragColor = vec4(.01f, .11f, .93f, 1.0f);
-//            return;
-//        }
-//        if (abs(intersectionPoint.x -  xMin) < epsilon){
-//            normal = -1 * right;
-//            FragColor = vec4(0.0f, 1.0f, 1.0f, 1.0f);
-//            return;
-//        }
-//        else if (abs(intersectionPoint.x - xMax) < epsilon){
-//            normal = right;
-//            FragColor = vec4(0.0f, 1.0f, 1.0f, 1.0f);
-//            return;
-//        }
-//        else if (abs(intersectionPoint.y - yMin) < epsilon){
-//            normal = -1 * up;
-//        }
-//        else if (abs(intersectionPoint.y - yMax) < epsilon){
-//            normal = up;
-//        }
-//        else if (abs(intersectionPoint.z - zMin) < epsilon){
-//            normal = -1 * forward;
-//        }
-//        else if (abs(intersectionPoint.z - zMax) < epsilon){
-//            normal = forward;
-//        }
-//        else {
-//            FragColor = vec4(.01f, .11f, .93f, 1.0f);
-//            return;
-//        }
 
+        vec3 worldAlginedVoxelIntersectionPoint = vec3(0,0,0);
 
+        if(!searchClump(worldAlignedIntersectionPoint, worldAlignedRayDirection, worldAlginedVoxelIntersectionPoint)){
+            FragColor = vec4(.71f, .91f, .93f, 1.0f);
+            return;
+        };
+
+        vec3 voxelIntersectionPoint = rotatePointAroundPoint(worldAlginedVoxelIntersectionPoint, translate, rotationMat, false);
         //Below is a point light, if we want a directional light, the l is simply a unit vector pointing towards
         // that directional light
         vec3 lightPos = vec3(1.0f,3.0f,3.0f);
@@ -336,11 +317,11 @@ void main()
 
         vec3 boxDiffuseCoff = vec3(0.8f,0.2f,0.3f);
         float lightIntensity = 0.8f;
-        vec3 l = normalize(lightPos - intersectionPoint);
+        vec3 l = normalize(lightPos - voxelIntersectionPoint);
         vec3 lambertionShade = boxDiffuseCoff * lightIntensity * max(0.0f, dot(normal, l));
 
         vec3 boxSpecularCoff = vec3(1.0f,1.0f,1.0f);
-        vec3 v = normalize(camRay.origin - intersectionPoint);
+        vec3 v = normalize(camRay.origin - voxelIntersectionPoint);
         vec3 halfVector = (v + l) / length(v+l);
         float phongExponent = 10.0f;
         vec3 specularShader = boxSpecularCoff * lightIntensity * pow( max(0.0f, dot(normal, halfVector)), phongExponent );

@@ -390,8 +390,7 @@ int main(){
     // In future set up clump struct that has methods such as rotateByDegrees and getClumpNormals
     // RotateByDegrees, for example, will take in the degree difference and call recalculateClumpNormals
     // while setRotation can set the rotation directly (and calculate angle differences).
-    recalculateClumpNormals(glm::vec3(45,45,0), &initialClumpNormals);
-
+    recalculateClumpNormals(glm::vec3(0,0,0), &initialClumpNormals);
 
     //On a loop clear the buffer, swap the buffers, then poll for events (call callback methods)
     do {
@@ -435,8 +434,8 @@ int main(){
         clumpInfo frameClumpInfo;
         //When migrating to rust, separate this out to  initialization and use getters to get the needed info
         //when it updates
-        frameClumpInfo.dimensions = vec4(1,1,1,0);
-        vec4 translate = vec4(vec3(0,0,0),1);
+        frameClumpInfo.dimensions = vec4(2,2,2,0);
+        vec4 translate = vec4(vec3(5,0,0),1);
         mat4 frameTransformMat = mat4(vec4(initialClumpNormals[0], 0), vec4(initialClumpNormals[1],0), vec4(initialClumpNormals[2],0), translate);
 
         frameClumpInfo.transformationMatrix = frameTransformMat;
