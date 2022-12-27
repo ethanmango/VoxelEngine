@@ -1,4 +1,5 @@
-#version 430 core //This shader runs for each pixel/fragment
+#version 430 core
+
 out vec4 FragColor;
 
 uniform vec3 cameraPos;
@@ -16,6 +17,18 @@ struct cameraInfo {
 struct clumpInfo {
     vec4 dimensions;
     mat4 transformationMatrix;
+    //Need to find a better way to include this information as a variable length
+    //Colors should be generated in the GPU so that one color array is passed in for all
+    //models in a scene..
+
+    //For voxels, put all of them in one long voxel array that gets passed into the SSBO separately
+    //so that a variable size can be used. use IDS and voxelSizes to skip to the needed part in the array
+    //Then the color/other data can come in a separate SSBO as well so it can  be variable size, as the needed
+    //number of colors depends on the vox files imported so the CPU will combine into an unknown sized color array
+    //and pass it in. This also means we can remove any colors that aren't being used by any voxel.. the question
+    //is how to make this efficient as to not keep changing this array frame by frame. Maybe a world load thing that
+    //knows at the beginning which colors are needed
+    int voxInfo[10000];
 };
 
 layout(std430, binding = 3) buffer inputCameraData
@@ -35,34 +48,157 @@ struct Ray {
     vec3 direction;
 };
 
+struct clumpNormals {
+    vec3 right;
+    vec3 up;
+    vec3 forward;
+};
 
-bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, inout vec3 foundIntersectionPoint){
+bool voxelExists(vec3 dimensions, int x, int y, int z){
+    if (x < 0 || y < 0 || z < 0){
+        return false;
+    }
+    if (x >= dimensions.x || y >= dimensions.y || z >= dimensions.z){
+        return false;
+    }
+    return true;
+
+}
+int existenceCoords(vec3 dims, int x, int y, int z) {
+    return z * int(dims.y) * int(dims.x) + y * int(dims.x) + x;
+}
+
+//NOTE: When rewriting this code in rust, look into passing in structs rather than everything like this
+bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 clumpIntersectionNormal, clumpNormals norms, inout vec3 foundIntersectionPoint, inout vec3 foundIntersectionNormal, bool firstCounted, vec3 inputDir){
     //Using similar strategy as in BB tracing we can multiply by reciprical rather than divide as to avoid -0 value.
     //Need to make sure any time we are using this t value though, we are using it for comparisons.
     vec3 clumpDims = inputClumpArr[0].dimensions.xyz;
     vec3 clumpCenter = inputClumpArr[0].transformationMatrix[3].xyz;
 
-    int voxelExistence[8] = {0,1,1,0,0,1,1,0};
+
 
     //First we need to check which voxel our clumpintersectionPoint exists at.
+
+    //For points starting within a clump, we need to define how we select which voxel we're in (this is based on the out normal)
+    //but we can probably make a uniform algorithm based on input normal.. below works for outer voxels
+
+    //For rust implementation, split up this implementation so that for shadow rays all we need to check is the existence of a another voxel in the way and not need to recalculate stuff like intersection point and voxels
+    //For this the innermost function can calculate true or false for a intersection, then pass into outer functions the results for recalculation of the intersection points and normals.
+
+    float epsilon = 0.000001f;
+    //Pass in a inputDir vec3 of (0,0,1) where ONE value isn't 0, and that value is either 1 or -1 representing the direction the intersection comes in. (useful for non edge voxel intersection points);
+    //Move the intersection point .000001 in that direction.. (may cause problems around edges... we'll see???
     float minBoundX = clumpCenter.x - (clumpDims.x / 2.0f);
+    clumpIntersectionPoint.x += -1 * epsilon * inputDir.x;
     int xVoxelCoord = max(0,int(floor(clumpIntersectionPoint.x - minBoundX)));
     if (xVoxelCoord > int(clumpDims.x) - 1) xVoxelCoord = int(clumpDims.x) - 1;
 
     float minBoundY = clumpCenter.y - (clumpDims.y / 2.0f);
+    clumpIntersectionPoint.y += -1 * epsilon * inputDir.y;
+
     int yVoxelCoord = max(0,int(floor(clumpIntersectionPoint.y - minBoundY)));
     if (yVoxelCoord > int(clumpDims.y) - 1) yVoxelCoord = int(clumpDims.y) - 1;
 
 
     float minBoundZ = clumpCenter.z - (clumpDims.z / 2.0f);
+    clumpIntersectionPoint.z += -1 * epsilon * inputDir.z;
+
     int zVoxelCoord = max(0,int(floor(clumpIntersectionPoint.z - minBoundZ)));
     if (zVoxelCoord > int(clumpDims.z) - 1) zVoxelCoord = int(clumpDims.z) - 1;
 
-    int existenceIndex = zVoxelCoord * int(clumpDims.y) * int(clumpDims.x) + yVoxelCoord * int(clumpDims.x) + xVoxelCoord;
+    int existenceIndex = existenceCoords(clumpDims, xVoxelCoord, yVoxelCoord, zVoxelCoord);
 
 
-    foundIntersectionPoint = clumpIntersectionPoint;
-    return voxelExistence[existenceIndex] == 1;
+    //Return early if the starter voxel exists
+    if (inputClumpArr[0].voxInfo[existenceIndex] != -1 && firstCounted) {
+        foundIntersectionPoint = clumpIntersectionPoint;
+        foundIntersectionNormal = clumpIntersectionNormal;
+        return true;
+    };
+
+    //Now that we have the voxel that we start in, we can start the traversal algorithm
+    ///First we get the step direction
+    vec3 stepDir;
+    if (dir.x >= 0) stepDir.x = 1;
+    else stepDir.x = -1;
+    if (dir.y >= 0) stepDir.y = 1;
+    else stepDir.y = -1;
+    if (dir.z >= 0) stepDir.z = 1;
+    else stepDir.z = -1;
+
+    //Next we get the tDelta, or how far along the ray we need to go to cross an entire voxel
+
+    vec3 tDelta;
+    //Need to take absolute value as delta is a scalar and direction doesn't matter
+    tDelta.x = abs(1.0f/dir.x);
+    tDelta.y = abs(1.0f/dir.y);
+    tDelta.z = abs(1.0f/dir.z);
+
+    //Now we initalize tMax, which is how far along the ray to get to a certain voxel in each direction.
+    //These all start out as how far until the first next voxel, then get tDelta added to it each time after
+
+    vec3 tMax;
+    vec3 comparisonLine;
+
+    comparisonLine.x = minBoundX + xVoxelCoord;
+    comparisonLine.y = minBoundY + yVoxelCoord;
+    comparisonLine.z = minBoundZ + zVoxelCoord;
+
+    if (stepDir.x == 1) comparisonLine.x = comparisonLine.x + 1;
+    if (stepDir.y == 1) comparisonLine.y = comparisonLine.y + 1;
+    if (stepDir.z == 1) comparisonLine.z = comparisonLine.z + 1;
+
+    //Abs value here again as t is a scalar and direction doesn't matter
+    tMax.x = tDelta.x * abs(comparisonLine.x - clumpIntersectionPoint.x);
+    tMax.y = tDelta.y * abs(comparisonLine.y - clumpIntersectionPoint.y);
+    tMax.z = tDelta.z * abs(comparisonLine.z - clumpIntersectionPoint.z);
+
+    float closestTMax = 0;
+    int closestTMaxAxis = 1;
+    //Now we are done with the initialization step, and can move onto the iterative.
+    while (voxelExists(clumpDims, xVoxelCoord, yVoxelCoord, zVoxelCoord)){
+
+        //Need to see if it exists first before we increment in case we go out of bounds
+        existenceIndex = existenceCoords(clumpDims, xVoxelCoord, yVoxelCoord, zVoxelCoord);
+        if (inputClumpArr[0].voxInfo[existenceIndex] != -1 && closestTMax != 0) {
+            foundIntersectionPoint = clumpIntersectionPoint + closestTMax * dir;
+            if (closestTMaxAxis == 0 && stepDir.x == 1) foundIntersectionNormal = -norms.right;
+            else if (closestTMaxAxis == 0 && stepDir.x == -1) foundIntersectionNormal = norms.right;
+            else if (closestTMaxAxis == 1 && stepDir.y == 1) foundIntersectionNormal = -norms.up;
+            else if (closestTMaxAxis == 1 && stepDir.y == -1) foundIntersectionNormal = norms.up;
+            else if (closestTMaxAxis == 2 && stepDir.z == 1) foundIntersectionNormal = -norms.forward;
+            else if (closestTMaxAxis == 2 && stepDir.z == -1) foundIntersectionNormal = norms.forward;
+            return true;
+        };
+
+        if (tMax.x <= tMax.y && tMax.x <= tMax.z){
+            xVoxelCoord += int(stepDir.x);
+            closestTMax = tMax.x;
+            closestTMaxAxis = 0;
+            tMax.x += tDelta.x;
+
+
+        }
+        else if (tMax.y <= tMax.x && tMax.y <= tMax.z){
+            yVoxelCoord += int(stepDir.y);
+            closestTMax = tMax.y;
+            closestTMaxAxis = 1;
+            tMax.y += tDelta.y;
+
+
+        }
+        else {
+            zVoxelCoord += int(stepDir.z);
+            closestTMax = tMax.z;
+            closestTMaxAxis = 2;
+            tMax.z += tDelta.z;
+
+
+        }
+    }
+
+    return false;
+
 
 }
 
@@ -140,6 +276,12 @@ void main()
     vec3 right = transformMat[0].xyz;
     vec3 up = transformMat[1].xyz;
     vec3 forward = transformMat[2].xyz;
+
+    clumpNormals clumpNorms;
+    clumpNorms.right = right;
+    clumpNorms.up = up;
+    clumpNorms.forward = forward;
+
     vec3 translate = transformMat[3].xyz;
 
     vec3 dimensions = inputClumpArr[0].dimensions.xyz;
@@ -245,7 +387,6 @@ void main()
         intersects = false;
     }
 
-
     if (intersects){
         //If we get here, we know that the ray intersects the bounding box, and
         // we can check the intersection point as being t_min
@@ -300,34 +441,56 @@ void main()
         }
 
         vec3 worldAlginedVoxelIntersectionPoint = vec3(0,0,0);
-
-        if(!searchClump(worldAlignedIntersectionPoint, worldAlignedRayDirection, worldAlginedVoxelIntersectionPoint)){
+        vec3 intersectionNormal = vec3(1,1,0);
+        vec3 worldAlignedClumpNormal = rotateDirectionAroundPoint(normal, translate, rotationMat, true);
+        if(!searchClump(worldAlignedIntersectionPoint, worldAlignedRayDirection, normal, clumpNorms, worldAlginedVoxelIntersectionPoint, intersectionNormal, true, worldAlignedClumpNormal)){
             FragColor = vec4(.71f, .91f, .93f, 1.0f);
             return;
         };
-
         vec3 voxelIntersectionPoint = rotatePointAroundPoint(worldAlginedVoxelIntersectionPoint, translate, rotationMat, false);
+        vec3 worldAlignedIntersectionNormal =rotateDirectionAroundPoint(intersectionNormal, translate, rotationMat, true);
+        //Check if voxel is shadowed by another voxel in the same clump. First we rotate the light source to match the clump
+        vec3 lightPos = vec3(0.0f,150.0f, 150.0f);
+        vec3 clumplightPos = rotatePointAroundPoint(lightPos, translate, rotationMat, false);
+        vec3 dirToLight = normalize(lightPos - voxelIntersectionPoint);
+        vec3 worldAlignedDirToLight = rotateDirectionAroundPoint(dirToLight, translate, rotationMat, true);
+        bool shadow = false;
+        vec3 test1 = vec3(0,0,0);
+        vec3 test2 = vec3(0,0,0);
+        if(searchClump(worldAlginedVoxelIntersectionPoint, worldAlignedDirToLight, vec3(0,0,0), clumpNorms, test1, test2, false, worldAlignedIntersectionNormal)) {
+            shadow = true;
+        }
+//        FragColor = vec4(voxelIntersectionPoint, 1);
+//        return;
         //Below is a point light, if we want a directional light, the l is simply a unit vector pointing towards
         // that directional light
-        vec3 lightPos = vec3(1.0f,3.0f,3.0f);
         vec3 boxAmbientCoff = vec3(0.8f,0.2f,0.3f);
         float lightAmbientIntensity = 0.2f;
         vec3 ambientShade = boxAmbientCoff * lightAmbientIntensity;
 
 
-        vec3 boxDiffuseCoff = vec3(0.8f,0.2f,0.3f);
+        //For now we will only define the ambient/diffuse when we pass in a color, the rest we figure out later
+//        vec3 boxDiffuseCoff = vec3(0.8f,0.2f,0.3f);
         float lightIntensity = 0.8f;
         vec3 l = normalize(lightPos - voxelIntersectionPoint);
-        vec3 lambertionShade = boxDiffuseCoff * lightIntensity * max(0.0f, dot(normal, l));
+        vec3 lambertionShade = boxAmbientCoff * lightIntensity * max(0.0f, dot(intersectionNormal, l));
 
+        //Below defines the color of the shinyness.. don't know if this should be a color or an intensity and if it belongs tot he voxel or the light.. look into this later
+        //specular stuff also looks kinda weird so look into that..
         vec3 boxSpecularCoff = vec3(1.0f,1.0f,1.0f);
         vec3 v = normalize(camRay.origin - voxelIntersectionPoint);
         vec3 halfVector = (v + l) / length(v+l);
         float phongExponent = 10.0f;
-        vec3 specularShader = boxSpecularCoff * lightIntensity * pow( max(0.0f, dot(normal, halfVector)), phongExponent );
+        vec3 specularShader = boxSpecularCoff * lightIntensity * pow( max(0.0f, dot(intersectionNormal, halfVector)), phongExponent );
+
 
         //Now we can do basic lighting on the cube (no ray traced lighting since we only have one object)
-        FragColor = vec4(ambientShade + lambertionShade + specularShader,0);
+        if (shadow){
+            FragColor = vec4(ambientShade,0);
+        }
+        else {
+            FragColor = vec4(ambientShade + lambertionShade + specularShader,0);
+        }
     }
     else {
         FragColor = vec4(.71f, .91f, .93f, 1.0f);

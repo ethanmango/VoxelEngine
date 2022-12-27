@@ -39,7 +39,7 @@
 				{
 					"directoryIndex" : 0,
 					"id" : "OpenGLVoxel::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-OpenGLVoxel-Debug-728e056f8a013992fd47.json",
+					"jsonFile" : "target-OpenGLVoxel-Debug-b2e7044a45724c0c468f.json",
 					"name" : "OpenGLVoxel",
 					"projectIndex" : 0
 				}
@@ -49,8 +49,8 @@
 	"kind" : "codemodel",
 	"paths" : 
 	{
-		"build" : "/home/ethan/Documents/VoxelEngine/OpenGLVoxel/cmake-build-debug",
-		"source" : "/home/ethan/Documents/VoxelEngine/OpenGLVoxel"
+		"build" : "/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel/cmake-build-debug",
+		"source" : "/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel"
 	},
 	"version" : 
 	{

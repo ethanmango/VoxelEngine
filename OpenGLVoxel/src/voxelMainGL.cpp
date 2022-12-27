@@ -2,6 +2,7 @@
 #include <GL/glew.h> //Function pointers
 #include <GLFW/glfw3.h> //Window manager
 #include "Shader.h"
+#include "readVox.h"
 #include <glm/glm.hpp> //3D math library
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
@@ -43,8 +44,159 @@ struct clumpInfo {
     //One unit is one voxel, always
     vec4 dimensions;
     mat4 transformationMatrix;
+    int voxInfo[10000];
 };
 
+
+//bool voxelExists(vec3 dimensions, int x, int y, int z){
+//    if (x < 0 || y < 0 || z < 0){
+//        return false;
+//    }
+//    if (x >= dimensions.x || y >= dimensions.y || z >= dimensions.z){
+//        return false;
+//    }
+//    return true;
+//
+//}
+//int existenceCoords(vec3 dims, int x, int y, int z) {
+//    return z * int(dims.y) * int(dims.x) + y * int(dims.x) + x;
+//}
+//bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 foundIntersectionPoint, vec3 dims, vec3 center){
+//    //Using similar strategy as in BB tracing we can multiply by reciprical rather than divide as to avoid -0 value.
+//    //Need to make sure any time we are using this t value though, we are using it for comparisons.
+//    glm::vec3 clumpDims = dims;
+//    glm::vec3 clumpCenter = center;
+//
+//    int voxelExistence[8] = {1,1,1,1,1,1,-1,1};
+//
+//    //First we need to check which voxel our clumpintersectionPoint exists at.
+//    float minBoundX = clumpCenter.x - (clumpDims.x / 2.0f);
+//    int xVoxelCoord = max(0,int(floor(clumpIntersectionPoint.x - minBoundX)));
+//    if (xVoxelCoord > int(clumpDims.x) - 1) xVoxelCoord = int(clumpDims.x) - 1;
+//
+//    float minBoundY = clumpCenter.y - (clumpDims.y / 2.0f);
+//    int yVoxelCoord = max(0,int(floor(clumpIntersectionPoint.y - minBoundY)));
+//    if (yVoxelCoord > int(clumpDims.y) - 1) yVoxelCoord = int(clumpDims.y) - 1;
+//
+//
+//    float minBoundZ = clumpCenter.z - (clumpDims.z / 2.0f);
+//    int zVoxelCoord = max(0,int(floor(clumpIntersectionPoint.z - minBoundZ)));
+//    if (zVoxelCoord > int(clumpDims.z) - 1) zVoxelCoord = int(clumpDims.z) - 1;
+//
+//    int existenceIndex = existenceCoords(clumpDims, xVoxelCoord, yVoxelCoord, zVoxelCoord);
+//
+//
+//    //Return early if the starter voxel exists
+//    if (voxelExistence[existenceIndex] != -1) {
+//        foundIntersectionPoint = clumpIntersectionPoint;
+//        return true;
+//    };
+//
+//    //Now that we have the voxel that we start in, we can start the traversal algorithm
+//    ///First we get the step direction
+//    glm::vec3 stepDir;
+//    if (dir.x >= 0) stepDir.x = 1;
+//    else stepDir.x = -1;
+//    if (dir.y >= 0) stepDir.y = 1;
+//    else stepDir.y = -1;
+//    if (dir.z >= 0) stepDir.z = 1;
+//    else stepDir.z = -1;
+//
+//    //Next we get the tDelta, or how far along the ray we need to go to cross an entire voxel
+//    vec3 tDelta;
+//    //Need to take absolute value as delta is a scalar and direction doesn't matter
+//    tDelta.x = abs(1.0f/dir.x);
+//    tDelta.y = abs(1.0f/dir.y);
+//    tDelta.z = abs(1.0f/dir.z);
+//
+//    //Now we initalize tMax, which is how far along the ray to get to a certain voxel in each direction.
+//    //These all start out as how far until the first next voxel, then get tDelta added to it each time after
+//
+//    vec3 tMax;
+//    vec3 comparisonLine;
+//
+//    comparisonLine.x = minBoundX + xVoxelCoord;
+//    comparisonLine.y = minBoundY + yVoxelCoord;
+//    comparisonLine.z = minBoundZ + zVoxelCoord;
+//
+//    if (stepDir.x == 1) comparisonLine.x = comparisonLine.x + 1;
+//    if (stepDir.y == 1) comparisonLine.y = comparisonLine.y + 1;
+//    if (stepDir.z == 1) comparisonLine.z = comparisonLine.z + 1;
+//
+//    //Abs value here again as t is a scalar and direction doesn't matter
+//    tMax.x = tDelta.x * abs(comparisonLine.x - clumpIntersectionPoint.x);
+//    tMax.y = tDelta.y * abs(comparisonLine.y - clumpIntersectionPoint.y);
+//    tMax.z = tDelta.z * abs(comparisonLine.z - clumpIntersectionPoint.z);
+//
+//    float closestTMax = 0;
+//    int closestTMaxAxis = 1;    //Now we are done with the initialization step, and can move onto the iterative.
+//    while (voxelExists(clumpDims, xVoxelCoord, yVoxelCoord, zVoxelCoord)){
+//
+//        //Need to see if it exists first before we increment in case we go out of bounds
+//        existenceIndex = existenceCoords(clumpDims, xVoxelCoord, yVoxelCoord, zVoxelCoord);
+//        if (voxelExistence[existenceIndex] != -1 && closestTMax != 0) {
+//            foundIntersectionPoint = clumpIntersectionPoint + closestTMax * dir;
+//
+//            return true;
+//        };
+//
+//        if (tMax.x <= tMax.y && tMax.x <= tMax.z){
+//            xVoxelCoord += int(stepDir.x);
+//            closestTMax = tMax.x;
+//            tMax.x += tDelta.x;
+//            closestTMaxAxis = 0;
+//
+//        }
+//        else if (tMax.y <= tMax.x && tMax.y <= tMax.z){
+//            yVoxelCoord += int(stepDir.y);
+//            closestTMax = tMax.y;
+//            tMax.y += tDelta.y;
+//            closestTMaxAxis = 1;
+//
+//        }
+//        else {
+//            zVoxelCoord += int(stepDir.z);
+//            closestTMax = tMax.z;
+//            tMax.z += tDelta.z;
+//            closestTMaxAxis = 2;
+//
+//        }
+//    }
+//
+//    return false;
+//
+//
+//}
+//
+//vec3 rotatePointAroundPoint(vec3 pointToRotate, vec3 rotationCenter, mat3 rotationMatrix, bool inverseRotation){
+//    vec3 translatedPoint = pointToRotate - rotationCenter;
+//    vec3 rotatedIntersectionPoint;
+//
+//    if (inverseRotation){
+//        rotatedIntersectionPoint = inverse(rotationMatrix) * translatedPoint;
+//    }
+//    else {
+//        rotatedIntersectionPoint = rotationMatrix * translatedPoint;
+//    }
+//    return rotatedIntersectionPoint + rotationCenter;
+//}
+//
+//vec3 rotateDirectionAroundPoint(vec3 directionToRotate, vec3 rotationCenter, mat3 rotationMatrix, bool inverseRotation){
+//    vec3 translatedDir = directionToRotate - rotationCenter;
+//    vec3 translatedOrigin = -rotationCenter;
+//    vec3 rotatedOrigin = inverse(rotationMatrix) * translatedOrigin;
+//    rotatedOrigin = rotatedOrigin + rotationCenter;
+//
+//    vec3 rotatedDir;
+//    if (inverseRotation){
+//        rotatedDir = inverse(rotationMatrix) * translatedDir;
+//    }
+//    else {
+//        rotatedDir = rotationMatrix * translatedDir;
+//    }
+//    return rotatedDir + rotationCenter - rotatedOrigin;
+//}
+//
 //void test(clumpInfo clump, cameraInfo cam, glm::vec2 pixel) {
 //    Ray camRay;
 //
@@ -63,26 +215,33 @@ struct clumpInfo {
 //    camRay.direction = normalize(distance * cam.cameraDir + (u * cam.cameraRight) +
 //                                 (v * cam.cameraUp));
 //
-//    //For the formula from the textbook txmin = (xmin - xe)/xd, we write xd as dot(raydir, right) and xe as dot(right, delta), delta being center of BB - ray origin
-//    //When right = aligned x axis, this is equal to saying get the x component of the origin point and direction vector, but we're now saying get x component on a rotated axis
-//    //Hard coding for now
-////    vec3 right = vec3(1,0,0);
-////    vec3 up = vec3(0,1,0);
-////    vec3 forward = vec3(0,0, 1);
-//
+////    mat4 transformMat = clump.transformationMatrix;
+////    vec3 right = transformMat[0];
+////    vec3 up = transformMat[1];
+////    vec3 forward = transformMat[2];
+////    vec3 translate = transformMat[3];
+////
+////    float xMax = clump.BBmaxPoint.x;
+////    float yMax = clump.BBmaxPoint.y;
+////    float zMax = clump.BBmaxPoint.z;
+////
+////    float xMin = clump.BBminPoint.x;
+////    float yMin = clump.BBminPoint.y;
+////    float zMin = clump.BBminPoint.z;
 //    mat4 transformMat = clump.transformationMatrix;
 //    vec3 right = transformMat[0];
 //    vec3 up = transformMat[1];
 //    vec3 forward = transformMat[2];
 //    vec3 translate = transformMat[3];
 //
-//    float xMax = clump.BBmaxPoint.x;
-//    float yMax = clump.BBmaxPoint.y;
-//    float zMax = clump.BBmaxPoint.z;
+//    vec3 dimensions = clump.dimensions;
+//    float xMax = dimensions.x/2;
+//    float yMax = dimensions.y/2;
+//    float zMax = dimensions.z/2;
 //
-//    float xMin = clump.BBminPoint.x;
-//    float yMin = clump.BBminPoint.y;
-//    float zMin = clump.BBminPoint.z;
+//    float xMin = -xMax;
+//    float yMin = -yMax;
+//    float zMin = -zMax;
 //
 //
 //    bool intersects;
@@ -182,72 +341,14 @@ struct clumpInfo {
 //
 //
 //    if (intersects){
-//        //If we get here, we know that the ray intersects the bounding box, and
-//        // we can check the intersection point as being t_min
-//        //Now we must check if it hits any voxels in the BB.
 //
-//        mat4 rotationMat = mat4(transformMat[0], transformMat[1], transformMat[2], vec4(0,0,0,1));
-////        if (rotationMat[2] == vec3(0,0,1)){
-////                FragColor = vec4(.21f, .1f, .23f, 1.0f);
-////                return;
-////            }
-////            else {
-////                FragColor = vec4(0,0,0, 1.0f);
-////                return;
-////            }
+//
+//        mat3 rotationMat = mat3(transformMat[0], transformMat[1], transformMat[2]);
 //        vec3 intersectionPoint = camRay.origin + (t_min * camRay.direction);
 //
-//        //Only need to rotate the cam origin and direction, as t_min takes care of the translation
-//        vec3 translatedCamOrigin = camRay.origin - translate;
-//        vec3 translatedCamDir = camRay.direction - translate;
-//
-//        vec3 rotatedCamOrigin = (inverse(rotationMat) * vec4(translatedCamOrigin,0));
-//        rotatedCamOrigin = rotatedCamOrigin + translate;
-//
-//        vec3 rotatedDirection = (inverse(rotationMat) * vec4(translatedCamDir,0));
-//        rotatedDirection = normalize(rotatedDirection + translate + camRay.origin);
-//
-//        vec3 transformedIntersectionPoint = rotatedCamOrigin + (t_min * rotatedDirection);
-//        vec3 normal;
-//        //If we get here, we know that the ray intersects the bounding box, and
-//        // we can check the intersection point as being t_min
-//        //Now we must check if it hits any voxels in the BB.
-//        if (abs(intersectionPoint.x - xMin) < epsilon) {
-//            normal = -1.0f * right;
-//        } else if (abs(intersectionPoint.x - xMax) < epsilon) {
-//            normal = right;
-//
-//        } else if (abs(intersectionPoint.y - yMin) < epsilon) {
-//            normal = -1.0f * up;
-//        } else if (abs(intersectionPoint.y - yMax) < epsilon) {
-//            normal = up;
-//        } else if (abs(intersectionPoint.z - zMin) < epsilon) {
-//            normal = -1.0f * forward;
-//        } else {
-//            normal = forward;
-//        }
-//
-//
-//        //Below is a point light, if we want a directional light, the l is simply a unit vector pointing towards
-//        // that directional light
-//        vec3 lightPos = vec3(5.0f, 5.0f, 5.0f);
-//        vec3 boxAmbientCoff = vec3(0.8f, 0.2f, 0.3f);
-//        float lightAmbientIntensity = 0.2f;
-//        vec3 ambientShade = boxAmbientCoff * lightAmbientIntensity;
-//
-//
-//        vec3 boxDiffuseCoff = vec3(0.8f, 0.2f, 0.3f);
-//        float lightIntensity = 0.8f;
-//        vec3 l = normalize(lightPos - intersectionPoint);
-//        vec3 lambertionShade = boxDiffuseCoff * lightIntensity * max(0.0f, dot(normal, l));
-//
-//        vec3 boxSpecularCoff = vec3(1.0f, 1.0f, 1.0f);
-//        vec3 v = normalize(camRay.origin - intersectionPoint);
-//        vec3 halfVector = (v + l) / length(v + l);
-//        float phongExponent = 10.0f;
-//        vec3 specularShader = boxSpecularCoff * lightIntensity * pow(max(0.0f, dot(normal, halfVector)), phongExponent);
-//
-//        //Now we can do basic lighting on the cube (no ray traced lighting since we only have one object)
+//        vec3 worldAlignedIntersectionPoint = rotatePointAroundPoint(intersectionPoint, translate, rotationMat, true);
+//        vec3 worldAlignedRayDirection = rotateDirectionAroundPoint(camRay.direction, translate, rotationMat, true);
+//        searchClump(worldAlignedIntersectionPoint, worldAlignedRayDirection, vec3(0,0,0), dimensions, translate);
 //    }
 //}
 // Can still use AABB for making a Binary Hierarchy later on, but the game world isn't aligned to the grid,
@@ -280,7 +381,7 @@ void recalculateClumpNormals(glm::vec3 angleDiffs, glm::mat3 *normalsMat){
 
 int main(){
 
-    //First we initialize GLFW
+    //First we initialize GLFW=+
     glewExperimental = true; // Needed for core profile
     if (!glfwInit()){
         fprintf(stderr, "Failed to initialize GLFW\n");
@@ -358,16 +459,21 @@ int main(){
 
     //Call our shaders
     Shader newShader = Shader();
-    GLuint programID = newShader.LoadShaders( "/home/ethan/Documents/VoxelEngine/OpenGLVoxel/src/voxel.vert", "/home/ethan/Documents/VoxelEngine/OpenGLVoxel/src/raytracevoxel.frag");
+    GLuint programID = newShader.LoadShaders( "/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel/src/voxel.vert", "/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel/src/raytracevoxel.frag");
     glUseProgram(programID);
 
     //Pass in the MVP matrix calculated above to vertex shader, first we generate a location for it and label it MVP
-//    GLuint MatrixID = glGetUniformLocation(programID, "MVP");
-//    GLuint CameraPosID = glGetUniformLocation(programID, "cameraPos");
-//    GLuint CameraDirID = glGetUniformLocation(programID, "cameraDir");
-//    GLuint CameraUpID = glGetUniformLocation(programID, "cameraUp");
-//    GLuint CameraRightID = glGetUniformLocation(programID, "cameraRight");
-    //GLuint CameraInfoID = glGetUniformLocation(programID, "cameraInfo");
+
+
+    //Now we will pass in a vox file to read
+    readVox newReadVox = readVox();
+    readVox::voxInfo newVoxInfo;
+    newVoxInfo = newReadVox.readFromFile("/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel/src/castle.vox");
+
+
+    //Need to load array into a buffer
+
+
 
 
     glEnable(GL_CULL_FACE); //Turns off seeing "inside" meshes
@@ -375,7 +481,7 @@ int main(){
 
     double lastTime = glfwGetTime();
     double frameLimitTime = glfwGetTime();
-    setCameraPos(vec3(0,0,10));
+    setCameraPos(vec3(0,0,50));
 //    setCameraDir(vec3(0,2,-1));
     int nbFrames = 0;
     glClearColor(.71f, .5f, .93f, 1.0f);
@@ -390,10 +496,11 @@ int main(){
     // In future set up clump struct that has methods such as rotateByDegrees and getClumpNormals
     // RotateByDegrees, for example, will take in the degree difference and call recalculateClumpNormals
     // while setRotation can set the rotation directly (and calculate angle differences).
-    recalculateClumpNormals(glm::vec3(0,0,0), &initialClumpNormals);
+    recalculateClumpNormals(glm::vec3(0,45,0), &initialClumpNormals);
 
     //On a loop clear the buffer, swap the buffers, then poll for events (call callback methods)
     do {
+
         //FPS Counter
         // Measure speed
         double currentTime = glfwGetTime();
@@ -417,11 +524,6 @@ int main(){
         glm::mat4 MVP = Projection * View;
         //Note: For now we're not using MVP because we're raytracing and using two large triangles as fragments
 
-        //glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP[0][0]);
-//        glUniform3f(CameraPosID, CameraPos.x, CameraPos.y, CameraPos.z);
-//        glUniform3f(CameraDirID, CameraDir.x, CameraDir.y, CameraDir.z);
-//        glUniform3f(CameraRightID, CameraRight.x, CameraRight.y, CameraRight.z);
-//        glUniform3f(CameraUpID, CameraUp.x, CameraUp.y, CameraUp.z);
 
         cameraInfo frameCamInfo;
         frameCamInfo.cameraPos = vec4(CameraPos,0);
@@ -434,18 +536,24 @@ int main(){
         clumpInfo frameClumpInfo;
         //When migrating to rust, separate this out to  initialization and use getters to get the needed info
         //when it updates
-        frameClumpInfo.dimensions = vec4(2,2,2,0);
-        vec4 translate = vec4(vec3(5,0,0),1);
+        frameClumpInfo.dimensions = vec4(1,1,1,0);
+        frameClumpInfo.dimensions.x = newVoxInfo.allModelsInFile[0].xSize;
+        frameClumpInfo.dimensions.y = newVoxInfo.allModelsInFile[0].ySize;
+        frameClumpInfo.dimensions.z = newVoxInfo.allModelsInFile[0].zSize;
+        vec4 translate = vec4(vec3(0,0,0),1);
         mat4 frameTransformMat = mat4(vec4(initialClumpNormals[0], 0), vec4(initialClumpNormals[1],0), vec4(initialClumpNormals[2],0), translate);
 
         frameClumpInfo.transformationMatrix = frameTransformMat;
+        std::vector<int> frameVoxelArray = newVoxInfo.allModelsInFile[0].voxelArray;
+        std::copy(frameVoxelArray.begin(), frameVoxelArray.end(), frameClumpInfo.voxInfo);
+
         struct clumpInfo frameClumpInfoArr[1];
         frameClumpInfoArr[0] = frameClumpInfo;
-//        for (int i = 0; i < 1920; i++) {
-//            for (int j = 0; j < 1080; j++) {
-               // test(frameClumpInfo, frameCamInfo, glm::vec2(5,5));
-//            }
+
+//        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS){
+//            test(frameClumpInfo, frameCamInfo, glm::vec2(1920/2,1080/2));
 //        }
+
         GLuint frameCameraSSBO;
         glGenBuffers(1, &frameCameraSSBO);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, frameCameraSSBO);
@@ -470,10 +578,11 @@ int main(){
         glfwPollEvents();
 
         //Frame rate limiter with 300 fps target
-        while (glfwGetTime() < frameLimitTime + 1.0/targetFrameRate) {
-           //Do nothing here, just waiting till loop ends to limit framerate
-        }
+//        while (glfwGetTime() < frameLimitTime + 1.0/targetFrameRate) {
+//           //Do nothing here, just waiting till loop ends to limit framerate
+//        }
         frameLimitTime += 1.0/targetFrameRate;
+
 
     }
     while(glfwGetKey(window, GLFW_KEY_ESCAPE) != GLFW_PRESS && glfwWindowShouldClose(window) == 0);

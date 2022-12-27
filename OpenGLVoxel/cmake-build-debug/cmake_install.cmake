@@ -1,4 +1,4 @@
-# Install script for directory: /home/ethan/Documents/VoxelEngine/OpenGLVoxel
+# Install script for directory: /home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/ethan/Documents/VoxelEngine/OpenGLVoxel/cmake-build-debug/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel/cmake-build-debug/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

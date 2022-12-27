@@ -8,7 +8,7 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_executable(
         ${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Shader.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/voxelMainGL.cpp src/controls.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/voxelMainGL.cpp src/controls.cpp src/readVox.cpp include/readVox.h)
 
 target_include_directories(
         ${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
