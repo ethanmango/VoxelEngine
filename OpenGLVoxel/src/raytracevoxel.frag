@@ -18,7 +18,7 @@ struct clumpInfo {
     vec4 dimensions;
     mat4 transformationMatrix;
     //Need to find a better way to include this information as a variable length
-    //Colors should be generated in the GPU so that one color array is passed in for all
+    // should be generated in the GPU so that one color array is passed in for all
     //models in a scene..
 
     //For voxels, put all of them in one long voxel array that gets passed into the SSBO separately
@@ -29,6 +29,8 @@ struct clumpInfo {
     //is how to make this efficient as to not keep changing this array frame by frame. Maybe a world load thing that
     //knows at the beginning which colors are needed
     int voxInfo[10000];
+    vec4 colors[256];
+
 };
 
 layout(std430, binding = 3) buffer inputCameraData
@@ -69,7 +71,7 @@ int existenceCoords(vec3 dims, int x, int y, int z) {
 }
 
 //NOTE: When rewriting this code in rust, look into passing in structs rather than everything like this
-bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 clumpIntersectionNormal, clumpNormals norms, inout vec3 foundIntersectionPoint, inout vec3 foundIntersectionNormal, bool firstCounted, vec3 inputDir){
+bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 clumpIntersectionNormal, clumpNormals norms, inout vec3 foundIntersectionPoint, inout vec3 foundIntersectionNormal, bool firstCounted, vec3 inputDir, inout vec3 outputColor){
     //Using similar strategy as in BB tracing we can multiply by reciprical rather than divide as to avoid -0 value.
     //Need to make sure any time we are using this t value though, we are using it for comparisons.
     vec3 clumpDims = inputClumpArr[0].dimensions.xyz;
@@ -113,6 +115,8 @@ bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 clumpIntersectionNo
     if (inputClumpArr[0].voxInfo[existenceIndex] != -1 && firstCounted) {
         foundIntersectionPoint = clumpIntersectionPoint;
         foundIntersectionNormal = clumpIntersectionNormal;
+        int colorIndex = inputClumpArr[0].voxInfo[existenceIndex];
+        outputColor = inputClumpArr[0].colors[colorIndex].xyz;
         return true;
     };
 
@@ -168,6 +172,8 @@ bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 clumpIntersectionNo
             else if (closestTMaxAxis == 1 && stepDir.y == -1) foundIntersectionNormal = norms.up;
             else if (closestTMaxAxis == 2 && stepDir.z == 1) foundIntersectionNormal = -norms.forward;
             else if (closestTMaxAxis == 2 && stepDir.z == -1) foundIntersectionNormal = norms.forward;
+            int colorIndex = inputClumpArr[0].voxInfo[existenceIndex];
+            outputColor = inputClumpArr[0].colors[colorIndex].xyz;
             return true;
         };
 
@@ -436,64 +442,80 @@ void main()
             normal = forward;
         }
         else {
-            FragColor = vec4(.01f, .11f, .93f, 1.0f);
             return;
         }
+
 
         vec3 worldAlginedVoxelIntersectionPoint = vec3(0,0,0);
         vec3 intersectionNormal = vec3(1,1,0);
         vec3 worldAlignedClumpNormal = rotateDirectionAroundPoint(normal, translate, rotationMat, true);
-        if(!searchClump(worldAlignedIntersectionPoint, worldAlignedRayDirection, normal, clumpNorms, worldAlginedVoxelIntersectionPoint, intersectionNormal, true, worldAlignedClumpNormal)){
-            FragColor = vec4(.71f, .91f, .93f, 1.0f);
+        vec3 voxelColor = vec3(0,0,0);
+        if(!searchClump(worldAlignedIntersectionPoint, worldAlignedRayDirection, normal, clumpNorms, worldAlginedVoxelIntersectionPoint, intersectionNormal, true, worldAlignedClumpNormal, voxelColor)){
+            FragColor = vec4(.21f, .11f, .13f, 0.0f);
             return;
         };
         vec3 voxelIntersectionPoint = rotatePointAroundPoint(worldAlginedVoxelIntersectionPoint, translate, rotationMat, false);
         vec3 worldAlignedIntersectionNormal =rotateDirectionAroundPoint(intersectionNormal, translate, rotationMat, true);
+
+
+
         //Check if voxel is shadowed by another voxel in the same clump. First we rotate the light source to match the clump
-        vec3 lightPos = vec3(0.0f,150.0f, 150.0f);
-        vec3 clumplightPos = rotatePointAroundPoint(lightPos, translate, rotationMat, false);
-        vec3 dirToLight = normalize(lightPos - voxelIntersectionPoint);
-        vec3 worldAlignedDirToLight = rotateDirectionAroundPoint(dirToLight, translate, rotationMat, true);
-        bool shadow = false;
-        vec3 test1 = vec3(0,0,0);
-        vec3 test2 = vec3(0,0,0);
-        if(searchClump(worldAlginedVoxelIntersectionPoint, worldAlignedDirToLight, vec3(0,0,0), clumpNorms, test1, test2, false, worldAlignedIntersectionNormal)) {
-            shadow = true;
-        }
-//        FragColor = vec4(voxelIntersectionPoint, 1);
-//        return;
+
         //Below is a point light, if we want a directional light, the l is simply a unit vector pointing towards
         // that directional light
-        vec3 boxAmbientCoff = vec3(0.8f,0.2f,0.3f);
+        vec3 lightPositions[2];
+        lightPositions[0] = vec3(-50.0f,50.0f, -50.0f);
+        lightPositions[1] = vec3(50.0f,50.0f, 50.0f);
+
+        vec3 boxAmbientCoff = voxelColor;
         float lightAmbientIntensity = 0.2f;
         vec3 ambientShade = boxAmbientCoff * lightAmbientIntensity;
 
 
-        //For now we will only define the ambient/diffuse when we pass in a color, the rest we figure out later
-//        vec3 boxDiffuseCoff = vec3(0.8f,0.2f,0.3f);
-        float lightIntensity = 0.8f;
-        vec3 l = normalize(lightPos - voxelIntersectionPoint);
-        vec3 lambertionShade = boxAmbientCoff * lightIntensity * max(0.0f, dot(intersectionNormal, l));
 
-        //Below defines the color of the shinyness.. don't know if this should be a color or an intensity and if it belongs tot he voxel or the light.. look into this later
-        //specular stuff also looks kinda weird so look into that..
-        vec3 boxSpecularCoff = vec3(1.0f,1.0f,1.0f);
-        vec3 v = normalize(camRay.origin - voxelIntersectionPoint);
-        vec3 halfVector = (v + l) / length(v+l);
-        float phongExponent = 10.0f;
-        vec3 specularShader = boxSpecularCoff * lightIntensity * pow( max(0.0f, dot(intersectionNormal, halfVector)), phongExponent );
+        FragColor = vec4(ambientShade,1);
+
+        for(int i = 0; i < 2; i++){
+            vec3 clumplightPos = rotatePointAroundPoint(lightPositions[i], translate, rotationMat, false);
+            vec3 dirToLight = normalize(lightPositions[i] - voxelIntersectionPoint);
+            vec3 worldAlignedDirToLight = rotateDirectionAroundPoint(dirToLight, translate, rotationMat, true);
+            bool shadow = false;
+
+            vec3 test1 = vec3(0,0,0);
+            vec3 test2 = vec3(0,0,0);
+            vec3 unusedVoxColor;
 
 
-        //Now we can do basic lighting on the cube (no ray traced lighting since we only have one object)
-        if (shadow){
-            FragColor = vec4(ambientShade,0);
+            if(searchClump(worldAlginedVoxelIntersectionPoint, worldAlignedDirToLight, vec3(0,0,0), clumpNorms, test1, test2, false, worldAlignedIntersectionNormal, unusedVoxColor)) {
+                shadow = true;
+            }
+
+
+            //For now we will only define the ambient/diffuse when we pass in a color, the rest we figure out later
+            //        vec3 boxDiffuseCoff = vec3(0.8f,0.2f,0.3f);
+            float lightIntensity = 0.8f;
+            vec3 l = normalize(lightPositions[i] - voxelIntersectionPoint);
+            vec3 lambertionShade = boxAmbientCoff * lightIntensity * max(0.0f, dot(intersectionNormal, l));
+
+            //Below defines the color of the shinyness.. don't know if this should be a color or an intensity and if it belongs tot he voxel or the light.. look into this later
+            //specular stuff also looks kinda weird so look into that..
+            vec3 boxSpecularCoff = vec3(1.0f,1.0f,1.0f);
+            vec3 v = normalize(camRay.origin - voxelIntersectionPoint);
+            vec3 halfVector = (v + l) / length(v+l);
+            float phongExponent = 10.0f;
+            vec3 specularShader = boxSpecularCoff * lightIntensity * pow( max(0.0f, dot(intersectionNormal, halfVector)), phongExponent );
+
+
+            //Now we can do basic lighting on the cube (no ray traced lighting since we only have one object)
+
+            if(!shadow) {
+                FragColor += vec4(lambertionShade ,0);
+            }
         }
-        else {
-            FragColor = vec4(ambientShade + lambertionShade + specularShader,0);
-        }
+
     }
     else {
-        FragColor = vec4(.71f, .91f, .93f, 1.0f);
+        FragColor = vec4(.11f, .91f, .93f, 0.0f);
     }
 }
 

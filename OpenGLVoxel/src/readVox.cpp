@@ -7,12 +7,21 @@
 #include <string>
 #include <cstring>
 
-
+//TODO: Figure out what to do with max size stuff. In magicavoxel this is technically 256*256*256, but we need to decide
+//how we want to restrict clump size in this program anyway which determines how we import something that is potentially
+//bigger than this max size with multiple models. For now though, if we don't restirct max size, we can simply use the
+//transform information to piece back together the split up larger models. Ideally the way they are constructed
+//outside of magicavoxel vs imported is treated the same.. but also the voxels will have attributes like stickyness
+//or stuff so maybe we just encourage making everything separately in small segemnts and only allow imports of certain siszes..
+//idk problem for later for sure
 readVox::voxInfo readVox::readFromFile(const char *vox_file_path) {
 
     voxInfo newVoxInfo = voxInfo();
+    //find a better way to throw away bytes in rust
+    char* throwaway = new char[5000];
     std::ifstream voxfile;
     voxfile.open(vox_file_path);
+
     char* title = new char[5];
     voxfile.read(title, 4);
     title[4] = '\0';
@@ -66,7 +75,7 @@ readVox::voxInfo readVox::readFromFile(const char *vox_file_path) {
 
         if (packExists) {
             //Next will be SIZE (check this is rust anyway)
-            voxfile.read(nullptr, 4);
+            voxfile.read(throwaway, 4);
         }
         voxfile.read((char*)&SIZEnumBytesContent, 4);
         voxfile.read((char*)&SIZEnumChildrenBytes, 4);
@@ -105,8 +114,40 @@ readVox::voxInfo readVox::readFromFile(const char *vox_file_path) {
             //Can create some sort of hash on the CPU when consrtucting to avoid numVoxels size for this additional
             //table, as multiple voxels can share the exact same properties so if it exists it should go to the same index
 
-            voxelExistenceArray[zVal * int(ySize) * int(xSize) + yVal * int(xSize) + xVal] = (int) colorIndex;
+            voxelExistenceArray[zVal * int(ySize) * int(xSize) + yVal * int(xSize) + xVal] = (int) colorIndex - 1;
         }
+
+
+        //Next is the nTRN chunk, nGRP, nSHP, MTL, LAYR, rOBJ, rCAM, NOTE, IMAP (check this in rust)
+        //FOr now we skip these , but maybe we can still use this information when importing
+        //multiple models to retain this additional information
+
+        char* chunkID = new char[5];
+        voxfile.read(chunkID, 4);
+        chunkID[4] = '\0';
+        //So we skip every chunk until we reach RGBA.
+        while (std::strcmp(chunkID, "RGBA") != 0){
+            uint32_t numBytesContent = 0;
+            uint32_t numChildrenBytes = 0;
+            voxfile.read((char*)&numBytesContent, 4);
+            voxfile.read((char*)&numChildrenBytes, 4);
+            voxfile.read(throwaway, numBytesContent);
+            voxfile.read(throwaway, numChildrenBytes);
+
+            voxfile.read(chunkID, 4);
+            chunkID[4] = '\0';
+        }
+
+        //Now we should be at the RGBA chunk
+
+
+        uint32_t RGBAnumBytesContent = 0;
+        uint32_t RGBAChildrenBytes = 0;
+        voxfile.read((char*)&RGBAnumBytesContent, 4);
+        voxfile.read((char*)&RGBAChildrenBytes, 4);
+
+
+        voxfile.read((char*)thisModel.colors,RGBAnumBytesContent);
 
         thisModel.xSize = (int)xSize;
         thisModel.ySize = (int)ySize;

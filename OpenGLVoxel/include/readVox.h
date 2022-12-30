@@ -16,6 +16,7 @@ public:
         int zSize{};
         //For now, stores a -1 if voxel doesn't exist, and index into color array if it exists
         std::vector<int> voxelArray;
+        unsigned char colors[1024];
     };
     struct voxInfo {
 

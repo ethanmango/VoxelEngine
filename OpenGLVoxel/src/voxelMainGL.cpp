@@ -9,26 +9,15 @@
 using namespace glm;
 #include "controls.h"
 
-//TODO: Plan, hardcode bounding boxes, then hardcode voxel positions and colors, then generate both from .vox files when
-//  ray tracing algorithm is working
-//  Need to figure out how to get normal of a voxel based on the ray trace, since each voxel has 6 normals depending
-//  on where the ray hits. We then multiply this unit normal by the orientation (rotation) of the bounding box to get the normal
-//  of the face of the voxel that was hit
-//  Should prob calculate the rotation of the bounding box in the CPU since its the same for each pixel, we will just need
-//  to pass in all the bounding box rotations and when we ray trace and hit a bounding box, we can identify and grab the
-//  corresponding rotation
-//  Pass in array of bounding box vertices (all 8 vertices) as well as bounding box rotations in same order, then
-//  if we find a bounding box match, we simply get the bounding box rotation from the other uniform at the same index
-//  recalculating for each pixel doesn't make sense
 
-// TODO: Next step is to ray trace just the bounding box, not the voxels inside. Need to check if a ray intersects
-//  with an OOB since the bounding box can rotate, but once we found a ray hit, we can transform the ray into object
-//  space (as if its aligned) and do an aligned method to find the needed voxel
-//  http://www.opengl-tutorial.org/miscellaneous/clicking-on-objects/picking-with-custom-ray-obb-function/
-//  Normal can be found by seeing which plane you entered. minx, maxX, y, z. Entered plane determines normal
-//  since OOB is not aligned the normal we get from this doesn't need to be rotated.
-//  Might not even need to translate to AABB, since we are prob checking the min max planes, which are determined by
-//  the OOB planes + an offset
+
+
+
+
+//TODO: KNOWN ISSUES: COLOR IS OFF (BLUISH TINT), memory leak when high number of voxels (memory usage keeps going up)
+// rust should fix this if its a real memory leak issue... camera inside clump causes WEIRD stuff to happen... this is
+// definetly just something wrong with the shader code.
+
 struct Ray {
     vec3 origin;
     vec3 direction;
@@ -45,6 +34,7 @@ struct clumpInfo {
     vec4 dimensions;
     mat4 transformationMatrix;
     int voxInfo[10000];
+    vec4 colors[256];
 };
 
 
@@ -442,6 +432,9 @@ int main(){
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(b1VerticesBuffer), b1VerticesBuffer, GL_STATIC_DRAW);
 
+    //Enable transparency
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable( GL_BLEND );
     //Set vertex buffer attributes
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
@@ -471,9 +464,16 @@ int main(){
     newVoxInfo = newReadVox.readFromFile("/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel/src/castle.vox");
 
 
+    vec4 colorPalette[256];
+    for (int i = 0; i < 255; i++){
+        colorPalette[i].x = float (newVoxInfo.allModelsInFile[0].colors[i * 4]) / 255.0f;
+        colorPalette[i].y = float (newVoxInfo.allModelsInFile[0].colors[i * 4 + 1]) / 255.0f;
+        colorPalette[i].z = float (newVoxInfo.allModelsInFile[0].colors[i * 4 + 2]) / 255.0f;
+        colorPalette[i].w = 1.0f;
+    }
+
+
     //Need to load array into a buffer
-
-
 
 
     glEnable(GL_CULL_FACE); //Turns off seeing "inside" meshes
@@ -484,7 +484,7 @@ int main(){
     setCameraPos(vec3(0,0,50));
 //    setCameraDir(vec3(0,2,-1));
     int nbFrames = 0;
-    glClearColor(.71f, .5f, .93f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
 
     //Initial camera and clump data. These are passed in every frame into the shader, so can be updated on a loop
@@ -496,8 +496,13 @@ int main(){
     // In future set up clump struct that has methods such as rotateByDegrees and getClumpNormals
     // RotateByDegrees, for example, will take in the degree difference and call recalculateClumpNormals
     // while setRotation can set the rotation directly (and calculate angle differences).
-    recalculateClumpNormals(glm::vec3(0,45,0), &initialClumpNormals);
+    recalculateClumpNormals(glm::vec3(0,180,0), &initialClumpNormals);
 
+
+    clumpInfo frameClumpInfo;
+    std::copy(std::begin(colorPalette), std::end(colorPalette), std::begin(frameClumpInfo.colors));
+    std::vector<int> frameVoxelArray = newVoxInfo.allModelsInFile[0].voxelArray;
+    std::copy(frameVoxelArray.begin(), frameVoxelArray.end(), frameClumpInfo.voxInfo);
     //On a loop clear the buffer, swap the buffers, then poll for events (call callback methods)
     do {
 
@@ -533,7 +538,6 @@ int main(){
         struct cameraInfo frameCamInfoArr[1];
         frameCamInfoArr[0] = frameCamInfo;
 
-        clumpInfo frameClumpInfo;
         //When migrating to rust, separate this out to  initialization and use getters to get the needed info
         //when it updates
         frameClumpInfo.dimensions = vec4(1,1,1,0);
@@ -544,8 +548,6 @@ int main(){
         mat4 frameTransformMat = mat4(vec4(initialClumpNormals[0], 0), vec4(initialClumpNormals[1],0), vec4(initialClumpNormals[2],0), translate);
 
         frameClumpInfo.transformationMatrix = frameTransformMat;
-        std::vector<int> frameVoxelArray = newVoxInfo.allModelsInFile[0].voxelArray;
-        std::copy(frameVoxelArray.begin(), frameVoxelArray.end(), frameClumpInfo.voxInfo);
 
         struct clumpInfo frameClumpInfoArr[1];
         frameClumpInfoArr[0] = frameClumpInfo;
@@ -568,6 +570,7 @@ int main(){
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, clumpArrSSBO);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         glClear(GL_COLOR_BUFFER_BIT);
 
         //Draw the triangle
