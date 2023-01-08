@@ -28,19 +28,22 @@ struct clumpInfo {
     //and pass it in. This also means we can remove any colors that aren't being used by any voxel.. the question
     //is how to make this efficient as to not keep changing this array frame by frame. Maybe a world load thing that
     //knows at the beginning which colors are needed
-    int voxInfo[10000];
     vec4 colors[256];
 
 };
 
-layout(std430, binding = 3) buffer inputCameraData
+layout(std430, binding = 3) buffer inputCameraDataBuff
 {
     cameraInfo inputCameraArr[];
 };
 
-layout(std430, binding = 4) buffer inputClumpData
+layout(std430, binding = 4) buffer inputClumpDataBuff
 {
     clumpInfo inputClumpArr[];
+};
+layout(std430, binding = 5) buffer inputVoxelInfoBuff
+{
+    int inputVoxelInfo[];
 };
 
 
@@ -112,10 +115,10 @@ bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 clumpIntersectionNo
 
 
     //Return early if the starter voxel exists
-    if (inputClumpArr[0].voxInfo[existenceIndex] != -1 && firstCounted) {
+    if (inputVoxelInfo[existenceIndex] != -1 && firstCounted) {
         foundIntersectionPoint = clumpIntersectionPoint;
         foundIntersectionNormal = clumpIntersectionNormal;
-        int colorIndex = inputClumpArr[0].voxInfo[existenceIndex];
+        int colorIndex = inputVoxelInfo[existenceIndex];
         outputColor = inputClumpArr[0].colors[colorIndex].xyz;
         return true;
     };
@@ -164,7 +167,7 @@ bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 clumpIntersectionNo
 
         //Need to see if it exists first before we increment in case we go out of bounds
         existenceIndex = existenceCoords(clumpDims, xVoxelCoord, yVoxelCoord, zVoxelCoord);
-        if (inputClumpArr[0].voxInfo[existenceIndex] != -1 && closestTMax != 0) {
+        if (inputVoxelInfo[existenceIndex] != -1 && closestTMax != 0) {
             foundIntersectionPoint = clumpIntersectionPoint + closestTMax * dir;
             if (closestTMaxAxis == 0 && stepDir.x == 1) foundIntersectionNormal = -norms.right;
             else if (closestTMaxAxis == 0 && stepDir.x == -1) foundIntersectionNormal = norms.right;
@@ -172,7 +175,7 @@ bool searchClump(vec3 clumpIntersectionPoint, vec3 dir, vec3 clumpIntersectionNo
             else if (closestTMaxAxis == 1 && stepDir.y == -1) foundIntersectionNormal = norms.up;
             else if (closestTMaxAxis == 2 && stepDir.z == 1) foundIntersectionNormal = -norms.forward;
             else if (closestTMaxAxis == 2 && stepDir.z == -1) foundIntersectionNormal = norms.forward;
-            int colorIndex = inputClumpArr[0].voxInfo[existenceIndex];
+            int colorIndex = inputVoxelInfo[existenceIndex];
             outputColor = inputClumpArr[0].colors[colorIndex].xyz;
             return true;
         };

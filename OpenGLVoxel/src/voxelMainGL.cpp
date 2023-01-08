@@ -33,7 +33,6 @@ struct clumpInfo {
     //One unit is one voxel, always
     vec4 dimensions;
     mat4 transformationMatrix;
-    int voxInfo[10000];
     vec4 colors[256];
 };
 
@@ -461,7 +460,7 @@ int main(){
     //Now we will pass in a vox file to read
     readVox newReadVox = readVox();
     readVox::voxInfo newVoxInfo;
-    newVoxInfo = newReadVox.readFromFile("/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel/src/castle.vox");
+    newVoxInfo = newReadVox.readFromFile("/home/ethanmoran/Documents/VoxelEngine/OpenGLVoxel/src/monu2.vox");
 
 
     vec4 colorPalette[256];
@@ -501,8 +500,40 @@ int main(){
 
     clumpInfo frameClumpInfo;
     std::copy(std::begin(colorPalette), std::end(colorPalette), std::begin(frameClumpInfo.colors));
-    std::vector<int> frameVoxelArray = newVoxInfo.allModelsInFile[0].voxelArray;
-    std::copy(frameVoxelArray.begin(), frameVoxelArray.end(), frameClumpInfo.voxInfo);
+//    std::vector<int> frameVoxelArray = newVoxInfo.allModelsInFile[0].voxelArray;
+//    std::copy(frameVoxelArray.begin(), frameVoxelArray.end(), frameClumpInfo.voxInfo);
+
+    frameClumpInfo.dimensions = vec4(1,1,1,0);
+    frameClumpInfo.dimensions.x = newVoxInfo.allModelsInFile[0].xSize;
+    frameClumpInfo.dimensions.y = newVoxInfo.allModelsInFile[0].ySize;
+    frameClumpInfo.dimensions.z = newVoxInfo.allModelsInFile[0].zSize;
+    vec4 translate = vec4(vec3(0,0,0),1);
+    mat4 frameTransformMat = mat4(vec4(initialClumpNormals[0], 0), vec4(initialClumpNormals[1],0), vec4(initialClumpNormals[2],0), translate);
+
+    frameClumpInfo.transformationMatrix = frameTransformMat;
+
+    struct clumpInfo frameClumpInfoArr[1];
+    frameClumpInfoArr[0] = frameClumpInfo;
+
+    GLuint clumpArrSSBO;
+    glGenBuffers(1, &clumpArrSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, clumpArrSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(frameClumpInfoArr), frameClumpInfoArr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, clumpArrSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    //Loading up vox info
+    int voxInfoArr[newVoxInfo.allModelsInFile[0].voxelArray.size()];
+    std::copy(newVoxInfo.allModelsInFile[0].voxelArray.begin(), newVoxInfo.allModelsInFile[0].voxelArray.end(), voxInfoArr);
+
+    GLuint voxInfoSSBO;
+    glGenBuffers(1, &voxInfoSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, voxInfoSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(voxInfoArr), voxInfoArr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, voxInfoSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+
     //On a loop clear the buffer, swap the buffers, then poll for events (call callback methods)
     do {
 
@@ -540,17 +571,7 @@ int main(){
 
         //When migrating to rust, separate this out to  initialization and use getters to get the needed info
         //when it updates
-        frameClumpInfo.dimensions = vec4(1,1,1,0);
-        frameClumpInfo.dimensions.x = newVoxInfo.allModelsInFile[0].xSize;
-        frameClumpInfo.dimensions.y = newVoxInfo.allModelsInFile[0].ySize;
-        frameClumpInfo.dimensions.z = newVoxInfo.allModelsInFile[0].zSize;
-        vec4 translate = vec4(vec3(0,0,0),1);
-        mat4 frameTransformMat = mat4(vec4(initialClumpNormals[0], 0), vec4(initialClumpNormals[1],0), vec4(initialClumpNormals[2],0), translate);
 
-        frameClumpInfo.transformationMatrix = frameTransformMat;
-
-        struct clumpInfo frameClumpInfoArr[1];
-        frameClumpInfoArr[0] = frameClumpInfo;
 
 //        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS){
 //            test(frameClumpInfo, frameCamInfo, glm::vec2(1920/2,1080/2));
@@ -563,14 +584,9 @@ int main(){
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, frameCameraSSBO);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-        GLuint clumpArrSSBO;
-        glGenBuffers(1, &clumpArrSSBO);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, clumpArrSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(frameClumpInfoArr), frameClumpInfoArr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, clumpArrSSBO);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+
+       // glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         glClear(GL_COLOR_BUFFER_BIT);
 
         //Draw the triangle
